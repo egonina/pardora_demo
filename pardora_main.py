@@ -19,12 +19,16 @@ song_id_pkl = "/disk1/home_user/egonina/msd_database/pickles/song_ids_1M.pkl"
 #song_id_pkl = "/disk1/home_user/egonina/msd_database/pickles/song_ids_short_1M.pkl"
 norm_param_pkl = "/disk1/home_user/egonina/msd_database/pickles/norm_param_pkl_1M.pkl"
 song_ids_with_rhythm = "/disk1/home_user/egonina/msd_database/pickles/rhythm_ids_1M.pkl"
+l2_output_pkl = "/disk1/home_user/egonina/pardora_demo/pardora_2_level_output.pkl"
+l3_output_pkl = "/disk1/home_user/egonina/pardora_demo/pardora_3_level_output.pkl"
+l4_output_pkl = "/disk1/home_user/egonina/pardora_demo/pardora_4_level_output.pkl"
 
 conn_str = '169.229.49.36', 'dbuser', 'p41msongs', 'milsongs'
 CHUNK_SIZE = 50 
 NORM_CHUNK_SIZE = 1000
 M = 64
 SV_SIZE = 768
+NUM_FINAL_RESULTS = 20 
 
 class Pardora:
     #=====================================
@@ -359,98 +363,212 @@ class Pardora:
     #=====================================
     #         QUERY COMPUTATIONS 
     #=====================================
-    def get_song_features_from_query(self, attribute, query):
+
+    def get_song_mta_data(self, artist=None, title=None):
+
+        if title is None or artist is None:
+            print "Need title and artist to get song MTA data"
+            sys.exit()
+        else:
+
+            conn = mdb.connect(conn_str[0], conn_str[1], conn_str[2], conn_str[3])
+            c = conn.cursor()
+
+            sql_query = 'SELECT song_id \
+                         FROM songs1m WHERE title = "' + title.lower() + \
+                         '" AND artist_name = "' + artist.lower() + '"'
+            c.execute(sql_query)
+            song_id = c.fetchall()
+
+            song_id_q = str(song_id).strip('[]').replace("u", "").\
+                         replace(",)", "").replace("(", "").replace(")", "")
+
+            sql_query = "SELECT mode, tempo, artist_hottness, song_id \
+                         FROM songs1m_mta WHERE song_id IN (" + song_id_q + ")"
+            c.execute(sql_query)
+            song_mta= c.fetchall()
+            c.close()
+            conn.close()
+
+            for s in song_mta:
+                mode = s[0]
+                tempo = s[1]
+                artist_hottness = s[2]
+
+            return mode, tempo, artist_hottness 
+
+    def get_song_features_from_query(self, artist=None, title=None):
+
         conn = mdb.connect(conn_str[0], conn_str[1], conn_str[2], conn_str[3])
         c = conn.cursor()
-        sql_query = "SELECT song_id \
-                    title FROM songs1m WHERE " \
-                    + attribute + " LIKE '" + query +"'"
+        st = time.time()
+        if title is None and artist is not None:
+            sql_query = 'SELECT song_id FROM songs1m WHERE artist_name LIKE "' + artist + '"'
+        elif title is not None and artist is None:
+            sql_query = 'SELECT song_id FROM songs1m WHERE title LIKE "' + title + '"' 
+        elif title is not None and artist is not None:
+            sql_query = 'SELECT song_id FROM songs1m WHERE title LIKE "' \
+                        + title + '" AND artist_name LIKE "' + artist + '"'
+
         c.execute(sql_query)
         song_ids = c.fetchall()
-        
-        song_ids_q = str(song_ids).strip('[]').replace("u", "").\
-                     replace(",)", "").replace("(", "").replace(")", "")
 
-        sql_query = "SELECT timbre_shape_0, timbre_shape_1, timbre_feats, artist_name, \
-                    title FROM songs1m WHERE song_id IN (" + song_ids_q + ")"
-        c.execute(sql_query)
-        timbre_result = c.fetchall()
+        song_id_list = []
+        for s in song_ids:
+            song_id_list.append(s[0])
 
-        sql_query = "SELECT rhythm_shape_0, rhythm_shape_1, rhythm_feats \
-                    FROM songs1m_rhythm WHERE song_id IN (" + song_ids_q + ")"
-        c.execute(sql_query)
-        rhythm_result = c.fetchall()
+        print "  TIME: SV GF, song ids:\t", time.time() - st
+        if len(song_id_list) > 0: 
+            song_ids_q = str(song_ids).strip('[]').replace("u", "").\
+                         replace(",)", "").replace("(", "").replace(")", "")
 
-        c.close()
-        
-        print '*********************************************************'
-        print 'Num timbre results: ', len(timbre_result)
-        print 'Num rhythm results: ', len(rhythm_result)
-        print '*********************************************************'
-                 
-        conn.close()
+            st = time.time()
+            sql_query = "SELECT timbre_shape_0, timbre_shape_1, timbre_feats, artist_name, \
+                        title FROM songs1m WHERE song_id IN (" + song_ids_q + ")"
+            c.execute(sql_query)
+            timbre_result = c.fetchall()
+            print "  TIME: SV GF, timbre:\t", time.time() - st
 
-        artist_title_pairs = []
-        for row in timbre_result:
-            artist_title_pairs.append((row[3], row[4]))
+            st = time.time()
+            sql_query = "SELECT rhythm_shape_0, rhythm_shape_1, rhythm_feats \
+                        FROM songs1m_rhythm WHERE song_id IN (" + song_ids_q + ")"
+            c.execute(sql_query)
+            rhythm_result = c.fetchall()
+            print "  TIME: SV GF: rhythm:\t", time.time() - st
 
-        return timbre_result, rhythm_result, artist_title_pairs
+            c.close()
+            
+            print "  INFO: Num timbre results: ", len(timbre_result)
+            print "  INFO: Num rhythm results: ", len(rhythm_result)
+                     
+            conn.close()
 
-    def get_query_svs_and_artist_title_pairs(self, attribute, query):
+            #artist_title_pairs = []
+            #for row in timbre_result:
+            #    artist_title_pairs.append((row[3], row[4]))
+
+            #print "QUERY SONGS: "
+            #print artist_title_pairs
+
+            return timbre_result, rhythm_result, song_id_list
+
+        else:
+            print "No Results Found for Query:", (artist, title)
+            return None, None, None 
+
+    def get_query_svs_and_artist_title_pairs(self, artist=None, title=None):
         p = open(norm_param_pkl, "rb")
         song_sv_dict = pickle.load(p)
-        print song_sv_dict.keys()
         p.close()
 
-        timbre_result, rhythm_result, artist_title_pairs = self.get_song_features_from_query(attribute, query)
-        t_feature_list = []
-        r_feature_list = []
+        st = time.time()
+        timbre_result, rhythm_result, song_ids = \
+                self.get_song_features_from_query(artist=artist, title=title)
+        print "-------------------------"
+        print "  TIME: SV, get features time:\t", time.time() - st
+        print "-------------------------"
+
+        if song_ids is not None:
+            t_feature_list = []
+            r_feature_list = []
     
-        for row in timbre_result:
-           feats =  np.array(np.ndarray((row[0],row[1]), buffer=row[2]), dtype=np.float32)
-           t_feature_list.append(feats)
+            st = time.time()
+            for row in timbre_result:
+               feats =  np.array(np.ndarray((row[0],row[1]), buffer=row[2]), dtype=np.float32)
+               t_feature_list.append(feats)
 
-        timbre_features = np.array(np.concatenate(t_feature_list))
+            timbre_features = np.array(np.concatenate(t_feature_list))
 
-        for row in rhythm_result:
-           feats =  np.array(np.ndarray((row[0],row[1]), buffer=row[2]), dtype=np.float32)
-           feats = feats.T
-           r_feature_list.append(feats)
+            for row in rhythm_result:
+               feats =  np.array(np.ndarray((row[0],row[1]), buffer=row[2]), dtype=np.float32)
+               feats = feats.T
+               r_feature_list.append(feats)
 
-        rhythm_features = np.array(np.concatenate(r_feature_list))
+            rhythm_features = np.array(np.concatenate(r_feature_list))
 
-        print timbre_features.shape
-        print rhythm_features.shape
-        query_timbre_sv = self.adapt_model(timbre_features, self.timbre_ubm_params, M)
-        query_rhythm_sv = self.adapt_model(rhythm_features, self.rhythm_ubm_params, M)
+            print "-------------------------"
+            print "  TIME: SV, feature concat time:\t", time.time() - st
+            print "-------------------------"
 
-        query_timbre_sv = msdtools.mcs_norm(query_timbre_sv, song_sv_dict['t_sv_mean'])
-        query_rhythm_sv = msdtools.mcs_norm(query_rhythm_sv, song_sv_dict['r_sv_mean'])
+            print timbre_features.shape
+            print rhythm_features.shape
 
-        p_mean_t, p_sigma_t = msdtools.p_norm_params_single(query_timbre_sv, song_sv_dict['t_sv_sample'].T)
-        p_mean_r, p_sigma_r = msdtools.p_norm_params_single(query_rhythm_sv, song_sv_dict['r_sv_sample'].T)
+            st = time.time()
+            query_timbre_sv = self.adapt_model(timbre_features, self.timbre_ubm_params, M)
+            query_rhythm_sv = self.adapt_model(rhythm_features, self.rhythm_ubm_params, M)
 
-        query_dict = {}
-        query_dict['q_t_sv'] = query_timbre_sv
-        query_dict['q_r_sv'] = query_rhythm_sv
-        query_dict['p_mean_t'] = p_mean_t
-        query_dict['p_mean_r'] = p_mean_r
-        query_dict['p_sigma_t'] = p_sigma_t
-        query_dict['p_sigma_r'] = p_sigma_r
+            query_timbre_sv = msdtools.mcs_norm(query_timbre_sv, song_sv_dict['t_sv_mean'])
+            query_rhythm_sv = msdtools.mcs_norm(query_rhythm_sv, song_sv_dict['r_sv_mean'])
 
-        return query_dict, artist_title_pairs
+            p_mean_t, p_sigma_t = msdtools.p_norm_params_single(query_timbre_sv, song_sv_dict['t_sv_sample'].T)
+            p_mean_r, p_sigma_r = msdtools.p_norm_params_single(query_rhythm_sv, song_sv_dict['r_sv_sample'].T)
+            print "-------------------------"
+            print "  TIME: SV, mcs and p-norm time:\t", time.time() - st
+            print "-------------------------"
 
-    def get_collab_f_info(self, artist_title_pairs):
+            query_dict = {}
+            query_dict['q_t_sv'] = query_timbre_sv
+            query_dict['q_r_sv'] = query_rhythm_sv
+            query_dict['p_mean_t'] = p_mean_t
+            query_dict['p_mean_r'] = p_mean_r
+            query_dict['p_sigma_t'] = p_sigma_t
+            query_dict['p_sigma_r'] = p_sigma_r
+
+            return query_dict, song_ids 
+
+        else:
+            return None, None
+
+    def get_collab_f_info_from_artist_title(self, query_pairs):
         query_song_nums = []
-        for qp in artist_title_pairs:
+        for qp in query_pairs:
             artist,title = qp
             collab.print_matching_queries(artist=artist,title=title)
             query_song_nums += collab.get_song_nums(artist=artist,title=title)
+        st = time.time()
+
+        print "COLLAB NUMS:"
+        print query_song_nums
+
+        print "-------------------------"
+        print "  TIME: CF, get song nums time:\t", time.time() - st
+        print "-------------------------"
         
-        output_song_ids, output_similarity = \
-                collab.collaborative_filter(query_song_nums,weights=None,num_neighbors=20)
+        if len(query_song_nums) > 0:
+            st = time.time()
+            output_song_ids, output_similarity = \
+                    collab.collaborative_filter(query_song_nums,weights=None,num_neighbors=1000)
+            print "-------------------------"
+            print "  TIME: CF, collab filter:\t", time.time() - st
+            print "-------------------------"
         
-        return output_song_ids, output_similarity
+            return output_song_ids, output_similarity
+        else:
+            print "No Collaborative Filtering Result Found"
+            return None, None
+
+    def get_collab_f_info(self, song_id_list):
+        st = time.time()
+        query_song_nums = collab.get_song_nums_from_ids(song_id_list)
+
+        print "COLLAB NUMS:"
+        print query_song_nums
+
+        print "-------------------------"
+        print "  TIME: CF, get song nums time:\t", time.time() - st
+        print "-------------------------"
+        
+        if len(query_song_nums) > 0:
+            st = time.time()
+            output_song_ids, output_similarity = \
+                    collab.collaborative_filter(query_song_nums,weights=None,num_neighbors=1000)
+            print "-------------------------"
+            print "  TIME: CF, collab filter:\t", time.time() - st
+            print "-------------------------"
+            return output_song_ids, output_similarity
+        else:
+            print "No Collaborative Filtering Result Found"
+            return None, None
 
     def get_close_songs_data(self, collab_f_song_ids):
         conn = mdb.connect(conn_str[0], conn_str[1], conn_str[2], conn_str[3])
@@ -470,18 +588,18 @@ class Pardora:
                      FROM songs1m_sv WHERE song_id IN (" + ids + ")"
         c.execute(sql_query)
         song_data = c.fetchall()
+
+        sql_query = "SELECT mode, tempo, artist_hottness, song_id \
+                     FROM songs1m_mta WHERE song_id IN (" + ids + ")"
+        c.execute(sql_query)
+        song_mta= c.fetchall()
         c.close()
         conn.close()
 
         total_dict = {}
-        for s in song_titles:
-            song_id = s[2]
-            total_dict[song_id] = {}
-            total_dict[song_id]['title'] = s[0]
-            total_dict[song_id]['artist_name'] = s[1]
-            
         for s in song_data:
             song_id = s[6]
+            total_dict[song_id] = {}
             total_dict[song_id]['t_sv'] = np.ndarray((SV_SIZE,),  buffer=s[0], dtype=np.float32)
             total_dict[song_id]['r_sv'] = np.ndarray((SV_SIZE,),  buffer=s[1], dtype=np.float32)
             total_dict[song_id]['p_mean_t'] = s[2]
@@ -489,13 +607,25 @@ class Pardora:
             total_dict[song_id]['p_sigma_t'] = s[4]
             total_dict[song_id]['p_sigma_r'] = s[5]
 
+        for s in song_titles:
+            song_id = s[2]
+            if song_id in total_dict.keys():
+                total_dict[song_id]['title'] = s[0]
+                total_dict[song_id]['artist_name'] = s[1]
+
+        for s in song_mta:
+            song_id = s[3]
+            if song_id in total_dict.keys():
+                total_dict[song_id]['mode'] = s[0]
+                total_dict[song_id]['tempo'] = s[1]
+                total_dict[song_id]['artist_hottness'] = s[2]
 
         return total_dict
 
     def get_final_list_of_closest_songs(self, qd, NN):
-        
         song_ids = []
         title_artist = []
+        mta = []
         t_supervectors = []
         t_p_means = []
         t_p_sigmas = []
@@ -510,10 +640,13 @@ class Pardora:
             r_p_means.append(NN[song]['p_mean_r'])
             t_p_sigmas.append(NN[song]['p_sigma_t'])
             r_p_sigmas.append(NN[song]['p_sigma_r'])
-            #song_ids = str(chunk).strip('[]').replace("u", "")
-            title = NN[song]['title']#.encode('utf-8')
-            artist = NN[song]['artist_name']#.encode('utf-8')
+            title = NN[song]['title']
+            artist = NN[song]['artist_name']
+            mode = NN[song]['mode']
+            tempo = NN[song]['tempo']
+            artist_hottness = NN[song]['artist_hottness']
             title_artist.append((title, artist))
+            mta.append((mode, tempo, artist_hottness))
             
         all_t_sv = np.vstack((t_supervectors))
         all_t_p_means = np.array(np.hstack((t_p_means)), dtype=np.float32)
@@ -521,7 +654,6 @@ class Pardora:
         all_r_sv = np.vstack((r_supervectors))
         all_r_p_means = np.array(np.hstack((r_p_means)), dtype=np.float32)
         all_r_p_sigmas = np.array(np.hstack((r_p_sigmas)), dtype=np.float32)
-        st = time.time()
         
         timbre_dist = msdtools.p_norm_distance_single(qd['q_t_sv'], all_t_sv.T, qd['p_mean_t'], all_t_p_means, qd['p_sigma_t'], all_t_p_sigmas)
         rhythm_dist = msdtools.p_norm_distance_single(qd['q_r_sv'], all_r_sv.T, qd['p_mean_r'], all_r_p_means, qd['p_sigma_r'], all_r_p_sigmas)
@@ -532,24 +664,57 @@ class Pardora:
         sorted_indices = np.argsort(total_dist)
         sorted_distances = np.sort(total_dist)
 
-        close_songs = [(index, title_artist[index]) for index in sorted_indices[:200]]
+        #close_songs = [(index, title_artist[index]) for index in sorted_indices[:20]]
+        close_songs = []
+        count = 0
+        for index in sorted_indices[:NUM_FINAL_RESULTS]:
+            close_songs.append((sorted_distances[count], title_artist[index], mta[index]))
+            count += 1
+
         return close_songs
 
-    def get_closest_songs(self, attribute, query):
-        query_dict, artist_title_pairs = p.get_query_svs_and_artist_title_pairs(attribute, query)
+    def get_closest_songs_main(self, artist=None, title=None):
 
-        #print artist_title_pairs
-        artist_title_pairs = [("Elton John", "Reverie"), ("Elton John", "Sacrifice"), ("Elton John", "Angeline")]
-        collab_f_song_ids, collab_song_similarity = self.get_collab_f_info(artist_title_pairs)
+        print "**************************************************"
+        print "Getting query data and supervectors"
+        print "**************************************************\n"
+        print "QUERY: ", (artist, title)
+        st = time.time()
+        query_dict, song_ids = p.get_query_svs_and_artist_title_pairs(artist=artist, title=title)
+        print "  ===== S1 TIME: Query SV & data:", time.time() - st, " ====="
 
-        print len(collab_f_song_ids)
-        close_songs_dict = self.get_close_songs_data(collab_f_song_ids)
+        print "**************************************************"
+        print "Getting collaborative filtering results"
+        print "**************************************************\n"
 
-        print len(close_songs_dict.keys())
+        if song_ids is not None:
+            st = time.time()
+            collab_f_song_ids, collab_song_similarity = self.get_collab_f_info(song_ids)
+            print "  ===== S2 TIME: Get collab filtering info: ", time.time() - st, " ====="
 
-        final_list = self.get_final_list_of_closest_songs(query_dict, close_songs_dict)
+            if collab_f_song_ids is not None:
+                print "**************************************************"
+                print "Getting close song data to compute distances on"
+                print "**************************************************\n"
+                st = time.time()
+                close_songs_dict = self.get_close_songs_data(collab_f_song_ids)
+                print " ===== S3 TIME: Get close songs data:", time.time() - st, " ====="
 
-        print final_list
+                print "**************************************************"
+                print "Getting final list of close songs"
+                print "**************************************************\n"
+                st = time.time()
+                final_list = self.get_final_list_of_closest_songs(query_dict, close_songs_dict)
+                print " ===== S4 TIME: Get final list:", time.time() - st, " =====\n"
+
+                print "FINAL LIST:\n" 
+                print final_list
+            else:
+                final_list = []
+            return final_list
+
+        else:
+            return []
         
     #=====================================
     #           UBM TRAINING 
@@ -636,7 +801,6 @@ class Pardora:
         UBM_params = self.get_UBM_parameters(from_pickle=True)
         print "------------- DONE INITIALIZING ----------"
 
-
 p = Pardora()
 
 t = time.time()
@@ -646,8 +810,106 @@ t = time.time()
 #p.create_sv_table()
 #p.compute_and_add_song_svs()
 
-p.get_closest_songs("artist_name", "elton john")
-#p.get_closest_songs("title", "windowpane")
+title = "karma police"
+artist = 'radiohead'
+out_dict = {}
+out_dict[0] = {}
+out_dict[0]['artist_name'] = artist 
+out_dict[0]['title'] = title
+out_dict[0]['dist_to_root'] = 0.0
+mode, tempo, artist_hottness = p.get_song_mta_data(artist, title)
+print mode, tempo, artist_hottness
+out_dict[0]['mode'] = mode 
+out_dict[0]['tempo'] = tempo 
+out_dict[0]['artist_hottness'] = artist_hottness 
+similar_songs = p.get_closest_songs_main(artist, title)
+
+nn_l1 = {}
+l1_song_count = 1
+for s in similar_songs:
+    title, artist = s[1]
+    mode, tempo, artist_hottness = s[2]
+    nn_l1[l1_song_count] = {} 
+    nn_l1[l1_song_count]['artist_name'] = artist.title()
+    nn_l1[l1_song_count]['title'] = title.title()
+    nn_l1[l1_song_count]['mode'] = mode 
+    nn_l1[l1_song_count]['tempo'] = tempo 
+    nn_l1[l1_song_count]['artist_hottness'] = artist_hottness 
+    nn_l1[l1_song_count]['dist_to_root'] = s[0]
+
+    similar_songs_l1 = p.get_closest_songs_main(artist, title)
+
+    if len(similar_songs_l1) == 0:
+        n_l2 = None
+    else:
+        nn_l2 = {}
+        l2_song_count = l1_song_count * 100
+        for s in similar_songs_l1:
+            title, artist = s[1]
+            mode, tempo, artist_hottness = s[2]
+            nn_l2[l2_song_count] = {} 
+            nn_l2[l2_song_count]['artist_name'] = artist.title()
+            nn_l2[l2_song_count]['title'] = title.title()
+            nn_l2[l2_song_count]['mode'] = mode 
+            nn_l2[l2_song_count]['tempo'] = tempo 
+            nn_l2[l2_song_count]['artist_hottness'] = artist_hottness 
+            nn_l2[l2_song_count]['dist_to_root'] = s[0]
+
+            similar_songs_l2 = p.get_closest_songs_main(artist, title)
+            #similar_songs_l1 = [(2, ('a','b')),(3,('c','d')),(4,('e','f')),(5,('g','h'))] 
+
+            if len(similar_songs_l2) == 0:
+                n_l3 = None
+            else:
+                nn_l3 = {}
+                l3_song_count = l2_song_count * 100
+                for s in similar_songs_l2:
+                    title, artist = s[1]
+                    mode, tempo, artist_hottness = s[2]
+                    nn_l3[l3_song_count] = {} 
+                    nn_l3[l3_song_count]['artist_name'] = artist.title()
+                    nn_l3[l3_song_count]['title'] = title.title()
+                    nn_l3[l3_song_count]['mode'] = mode 
+                    nn_l3[l3_song_count]['tempo'] = tempo 
+                    nn_l3[l3_song_count]['artist_hottness'] = artist_hottness 
+                    nn_l3[l3_song_count]['dist_to_root'] = s[0]
+
+                    similar_songs_l3 = p.get_closest_songs_main(artist, title)
+                    #similar_songs_l1 = [(2, ('a','b')),(3,('c','d')),(4,('e','f')),(5,('g','h'))] 
+
+                    if len(similar_songs_l3) == 0:
+                        n_l4 = None
+                    else:
+                        nn_l4 = {}
+                        l4_song_count = l3_song_count * 100
+                        for s in similar_songs_l3:
+                            title, artist = s[1]
+                            mode, tempo, artist_hottness = s[2]
+                            nn_l4[l4_song_count] = {} 
+                            nn_l4[l4_song_count]['artist_name'] = artist.title()
+                            nn_l4[l4_song_count]['title'] = title.title()
+                            nn_l4[l4_song_count]['mode'] = mode 
+                            nn_l4[l4_song_count]['tempo'] = tempo 
+                            nn_l4[l4_song_count]['artist_hottness'] = artist_hottness 
+                            nn_l4[l4_song_count]['dist_to_root'] = s[0]
+                            nn_l4[l4_song_count]['neighbors'] = None
+
+                            l4_song_count += 1
+
+                    nn_l3[l3_song_count]['neighbors'] = nn_l4
+                    l3_song_count += 1
+
+            nn_l2[l2_song_count]['neighbors'] = nn_l3
+            l2_song_count += 1
+
+    nn_l1[l1_song_count]['neighbors'] = nn_l2
+    l1_song_count += 1
+
+out_dict[0]['neighbors'] = nn_l1 
+
+p = open(l4_output_pkl, "wb")
+pickle.dump(out_dict, p, True)
+p.close()
 
 print "----------------------------------------------------------------------------"
 print "                           TOTAL TIME: ", time.time() - t
