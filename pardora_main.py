@@ -214,6 +214,7 @@ class Pardora:
         for index in sorted_indices[:fanout]:
             song_id = song_ids[index]
             close_songs[song_id] = {}
+            close_songs[song_id]['song_id'] = song_id 
             close_songs[song_id]['artist_name'] = title_artist[index][1]
             close_songs[song_id]['title'] = title_artist[index][0]
             close_songs[song_id]['dist_to_parent'] = sorted_distances[count] 
@@ -309,43 +310,59 @@ class Pardora:
 
         song_id_list = pardora_db.get_song_ids_from_title_artist_pairs(song_list)
 
+        final_dict = {}
+        final_dict[0] = {}
+        final_dict[0]['artist_name'] = 'Root'
+
         # Make sure the query returned some results
         if song_id_list is not None:
             if num_levels == 1:
-                print "ONE LEVEL EXPANSION"
                 nn = self.get_nn_one_query(song_id_list, fanout)
-                if nn is not None:
-                    print "::::::::::::::: NEAR NEIGHBORS::::::::::::::::::"
-                    for n in nn.keys(): # song_id -> ['artist'],['title']...
-                        print nn[n]['artist_name'], nn[n]['title']
-                    print "::::::::::::::::::::::::::::::::::::::::::::::::"
+                final_dict[0]['nn'] = nn
 
             else:
-                print "MULTI LEVEL EXPANSION"
-                print "LEVEL 1"
+                queue = {}
+                queue[0] = []
                 nn = self.get_nn_one_query(song_id_list, fanout)
-                if nn is not None:
-                    print "::::::::::::::: NEAR NEIGHBORS::::::::::::::::::"
-                    for n in nn.keys(): # song_id -> ['artist'],['title']...
-                        print nn[n]['artist_name'], nn[n]['title']
-                    print "::::::::::::::::::::::::::::::::::::::::::::::::"
-                    id_list = nn.keys()
-                    for level_count in range(num_levels-1):
-                        print "LEVEL:", level_count+2
-                        m_nn, id_list = self.get_nn_multi_query(id_list, fanout)
-                        if m_nn is not None:
-                            print "::::::::::::::: NEAR NEIGHBORS::::::::::::::::::"
-                            for n in m_nn.keys():
-                                d = m_nn[n]
-                                print "\t root song: ", n
-                                for k in d:
-                                    print d[k]['artist_name'], d[k]['title']
-                            print "::::::::::::::::::::::::::::::::::::::::::::::::"
-                        # Store the neighbors in a global dictionary
+                final_dict[0]['nn'] = nn
+
+                for n in nn.keys():
+                    queue[0].append(nn[n]) 
+
+                id_list = nn.keys()
+                for level in range(num_levels-1):
+                    m_nn, id_list = self.get_nn_multi_query(id_list, fanout)
+
+                    for elem in queue[level]:
+                        elem['nn'] = m_nn[elem['song_id']] 
+
+                    queue[level+1] = []
+                    for m in m_nn.keys():
+                        for k in m_nn[m].keys():
+                            queue[level+1].append(m_nn[m][k]) 
         else:
             print "No songs matched the query: ", song_list
             sys.exit()
 
+        print ":::::::::::::::::::::::::::::::::::::::::::::::::::"
+        print "                FINAL TREE                         "
+
+        print "ROOT: ", final_dict[0]['artist_name'] 
+
+        print "Neighbors:" 
+        for nn in final_dict[0]['nn'].keys():
+            print "\t", final_dict[0]['nn'][nn]['artist_name'], final_dict[0]['nn'][nn]['title'] 
+            print "\tNeighbors:" 
+            childs = final_dict[0]['nn'][nn]['nn']
+            for c in childs.keys():
+                print "\t\t", childs[c]['artist_name'], childs[c]['title']
+                print "\t\tNeighbors:" 
+                childs2 = childs[c]['nn']
+                for c2 in childs2.keys():
+                    print "\t\t\t", childs2[c2]['artist_name'], childs2[c2]['title']
+
+
+        print ":::::::::::::::::::::::::::::::::::::::::::::::::::"
     
     def __init__(self):
         self.timbre_ubm_params, self.rhythm_ubm_params = pardora_ubm.get_UBM_parameters(M, from_pickle=True)
