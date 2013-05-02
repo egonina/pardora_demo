@@ -152,19 +152,14 @@ def get_song_features_from_query(song_id_list):
                 title FROM songs1m WHERE song_id IN (" + song_ids_str + ")"
     c.execute(sql_query)
     timbre_result = c.fetchall()
-    print "  TIME: SV GF, timbre:\t", time.time() - st
 
-    st = time.time()
     sql_query = "SELECT rhythm_shape_0, rhythm_shape_1, rhythm_feats \
                 FROM songs1m_rhythm WHERE song_id IN (" + song_ids_str + ")"
     c.execute(sql_query)
     rhythm_result = c.fetchall()
-    print "  TIME: SV GF: rhythm:\t", time.time() - st
+    print "TIME: get query song features from DB:\t", time.time() - st
 
     c.close()
-    
-    print "  INFO: Num timbre results: ", len(timbre_result)
-    print "  INFO: Num rhythm results: ", len(rhythm_result)
              
     conn.close()
 
