@@ -27,6 +27,8 @@ l2_output_json = "/disk1/home_user/egonina/pardora_demo/sample_output/pardora_l2
 l3_output_json = "/disk1/home_user/egonina/pardora_demo/sample_output/pardora_l3.json"
 l4_output_json = "/disk1/home_user/egonina/pardora_demo/sample_output/pardora_l4.json"
 
+conn_str = '169.229.49.36', 'dbuser', 'p41msongs', 'milsongs'
+
 CF_NEIGHBORS = 100 
 M = 64
 
@@ -35,77 +37,80 @@ class Pardora:
     #        WRAPPERS TO PREPROCESSING FUNCTIONS  
     #=================================================
     def create_rhythm_table(self):
-        pardora_db.create_rhythm_table()
+        pardora_db.create_rhythm_table(self.conn, self.cursor)
         return
 
     def drop_rhythm_table(self):
-        pardora_db.drop_rhythm_table()
+        pardora_db.drop_rhythm_table(self.conn, self.cursor)
         return
 
     def compute_and_add_rhythm_feats(self):
-        pardora_preprocessing.compute_and_add_rhythm_feats()
+        pardora_preprocessing.compute_and_add_rhythm_feats(self.cursor)
         return
 
     def create_sv_table(self):
-        pardora_db.create_sv_table()
+        pardora_db.create_sv_table(self.conn, self.cursor)
         return
 
     def drop_sv_table(self):
-        pardora_db.drop_sv_table()
+        pardora_db.drop_sv_table(self.conn, self.cursor)
         return
 
     def compute_and_add_song_svs(self, timbre_ubm_params, rhythm_ubm_params):
-        pardora_preprocessing.compute_and_add_song_svs(timbre_ubm_params, rhythm_ubm_params)
+        pardora_preprocessing.compute_and_add_song_svs(timbre_ubm_params, rhythm_ubm_params, self.cursor)
         return
 
     
     #=====================================
     #         QUERY COMPUTATIONS 
     #=====================================
-
     def get_query_data(self, song_id_list):
         p = open(norm_param_pkl, "rb")
         song_sv_dict = pickle.load(p)
         p.close()
 
-        timbre_result, rhythm_result = pardora_db.get_song_features_from_query(song_id_list)
+        print "NUMBER OF SONGS IN QUERY: ", len(song_id_list)
+        if len(song_id_list) > 1:
+            timbre_result, rhythm_result = pardora_db.get_song_features_from_query(song_id_list, self.cursor)
 
-        t_feature_list = []
-        r_feature_list = []
+            t_feature_list = []
+            r_feature_list = []
     
-        for row in timbre_result:
-           feats =  np.array(np.ndarray((row[0],row[1]), buffer=row[2]), dtype=np.float32)
-           t_feature_list.append(feats)
+            for row in timbre_result:
+               feats =  np.array(np.ndarray((row[0],row[1]), buffer=row[2]), dtype=np.float32)
+               t_feature_list.append(feats)
 
-        timbre_features = np.array(np.concatenate(t_feature_list))
+            timbre_features = np.array(np.concatenate(t_feature_list))
 
-        for row in rhythm_result:
-           feats =  np.array(np.ndarray((row[0],row[1]), buffer=row[2]), dtype=np.float32)
-           feats = feats.T
-           r_feature_list.append(feats)
+            for row in rhythm_result:
+               feats =  np.array(np.ndarray((row[0],row[1]), buffer=row[2]), dtype=np.float32)
+               feats = feats.T
+               r_feature_list.append(feats)
 
-        rhythm_features = np.array(np.concatenate(r_feature_list))
+            rhythm_features = np.array(np.concatenate(r_feature_list))
 
 
-        print "INFO: Timbre features shape:", timbre_features.shape
-        print "INFO: Rhythm features shape:", rhythm_features.shape
+            print "INFO: Timbre features shape:", timbre_features.shape
+            print "INFO: Rhythm features shape:", rhythm_features.shape
 
-        query_timbre_sv = pardora_ubm.adapt_model(timbre_features, self.timbre_ubm_params, M)
-        query_rhythm_sv = pardora_ubm.adapt_model(rhythm_features, self.rhythm_ubm_params, M)
+            query_timbre_sv = pardora_ubm.adapt_model(timbre_features, self.timbre_ubm_params, M)
+            query_rhythm_sv = pardora_ubm.adapt_model(rhythm_features, self.rhythm_ubm_params, M)
 
-        query_timbre_sv = msdtools.mcs_norm(query_timbre_sv, song_sv_dict['t_sv_mean'])
-        query_rhythm_sv = msdtools.mcs_norm(query_rhythm_sv, song_sv_dict['r_sv_mean'])
+            query_timbre_sv = msdtools.mcs_norm(query_timbre_sv, song_sv_dict['t_sv_mean'])
+            query_rhythm_sv = msdtools.mcs_norm(query_rhythm_sv, song_sv_dict['r_sv_mean'])
 
-        p_mean_t, p_sigma_t = msdtools.p_norm_params_single(query_timbre_sv, song_sv_dict['t_sv_sample'].T)
-        p_mean_r, p_sigma_r = msdtools.p_norm_params_single(query_rhythm_sv, song_sv_dict['r_sv_sample'].T)
+            p_mean_t, p_sigma_t = msdtools.p_norm_params_single(query_timbre_sv, song_sv_dict['t_sv_sample'].T)
+            p_mean_r, p_sigma_r = msdtools.p_norm_params_single(query_rhythm_sv, song_sv_dict['r_sv_sample'].T)
 
-        query_dict = {}
-        query_dict['q_t_sv'] = query_timbre_sv
-        query_dict['q_r_sv'] = query_rhythm_sv
-        query_dict['p_mean_t'] = p_mean_t
-        query_dict['p_mean_r'] = p_mean_r
-        query_dict['p_sigma_t'] = p_sigma_t
-        query_dict['p_sigma_r'] = p_sigma_r
+            query_dict = {}
+            query_dict['q_t_sv'] = query_timbre_sv
+            query_dict['q_r_sv'] = query_rhythm_sv
+            query_dict['p_mean_t'] = p_mean_t
+            query_dict['p_mean_r'] = p_mean_r
+            query_dict['p_sigma_t'] = p_sigma_t
+            query_dict['p_sigma_r'] = p_sigma_r
+        else:
+            query_dict = pardora_db.get_song_sv_data(song_id_list[0], self.cursor)
 
         return query_dict 
 
@@ -114,7 +119,7 @@ class Pardora:
         song_sv_dict = pickle.load(p)
         p.close()
 
-        query_dicts = pardora_db.get_song_svs_multi_query(song_id_list)
+        query_dicts = pardora_db.get_song_svs_multi_query(song_id_list, self.cursor)
 
         return query_dicts
 
@@ -150,7 +155,7 @@ class Pardora:
         return collab_song_data 
 
 
-    def get_nn_dict(self, qd, NN, fanout):
+    def get_nn_dict(self, qd, NN, fanout, parent_cf_score=0.0):
         song_ids = []
         title_artist = []
         mta = []
@@ -190,7 +195,7 @@ class Pardora:
 
         cf_dist = np.array(cf_distances, dtype=np.float32)
 
-        total_dist = 0.7*timbre_dist + 0.3*rhythm_dist # + some_weight * cf_dist
+        total_dist = 0.7*timbre_dist + 0.3*rhythm_dist + cf_dist+ parent_cf_score 
         sorted_indices = np.argsort(total_dist)
         sorted_distances = np.sort(total_dist)
 
@@ -226,14 +231,22 @@ class Pardora:
         st = time.time()
         cf_data_query_time = 0
         dist_comp_time = 0
+
+        nn_cf_scores = [] 
+
         if len(collab_song_info.keys()) > 0:
             t1 = time.time()
-            close_songs_dict = pardora_db.get_cf_songs_data(collab_song_info)
+            close_songs_dict = pardora_db.get_cf_songs_data(collab_song_info, self.cursor)
             cf_data_query_time += time.time() - t1 
 
             t2 = time.time()
             nn_dict = self.get_nn_dict(query_dict, close_songs_dict, fanout)
             dist_comp_time += time.time() - t2
+
+            # keep track of cf score of the neighbors separately
+            for n in nn_dict.keys():
+                nn_cf_scores.append((n, collab_song_info[n]))
+
         else:
             print "No collaborative filtering neighbors found."
             nn_dict = None 
@@ -241,9 +254,9 @@ class Pardora:
 
         print "INFO: Step 3, Compute closest songs:", time.time() - st,\
               ";\n \tCF data gather (", cf_data_query_time, "), Dist comp (", dist_comp_time, ")"
-        return nn_dict 
+        return nn_dict, nn_cf_scores 
 
-    def get_nn_multi_query(self, song_id_list, fanout):
+    def get_nn_multi_query(self, song_id_list, nn_cf_scores, fanout):
         print "*********************************************************"
         print "              GET NN MULTI QUERY                      "
         print "*********************************************************"
@@ -257,37 +270,45 @@ class Pardora:
 
         total_nn_dict = {}
         total_id_list = []
+        out_nn_cf_scores = []
         st = time.time()
         cf_data_query_time = 0
         dist_comp_time = 0
-        for input_song in song_id_list:
 
-            if len(collab_song_infos[input_song].keys()) > 0:
+        for input_song in nn_cf_scores:
+            input_song_id = input_song[0]
+            input_song_cf_score = input_song[1]
+
+            if len(collab_song_infos[input_song_id].keys()) > 0:
                 t1 = time.time()
-                close_songs_dict = pardora_db.get_cf_songs_data(collab_song_infos[input_song])
+                close_songs_dict = pardora_db.get_cf_songs_data(collab_song_infos[input_song_id], self.cursor)
                 cf_data_query_time += time.time() - t1 
 
                 t2 = time.time()
-                nn_dict = self.get_nn_dict(query_dicts[input_song], close_songs_dict, fanout)
+                nn_dict = self.get_nn_dict(query_dicts[input_song_id],\
+                                           close_songs_dict, fanout,\
+                                           parent_cf_score=input_song_cf_score)
                 dist_comp_time += time.time() - t2 
 
             else:
                 print "No collaborative filtering neighbors found."
                 nn_dict = None 
 
-            total_nn_dict[input_song] = nn_dict
-            for k in nn_dict.keys(): total_id_list.append(k)
+            total_nn_dict[input_song_id] = nn_dict
+            for k in nn_dict.keys(): 
+                total_id_list.append(k)
+                out_nn_cf_scores.append((k, collab_song_infos[input_song_id][k]))
 
         print "INFO: Step 3, Compute closest songs:", time.time() - st,\
               ";\n \tCF data gather (", cf_data_query_time, "), Dist comp (", dist_comp_time, ")"
-        return total_nn_dict , total_id_list
+        return total_nn_dict, out_nn_cf_scores, total_id_list
 
     def get_near_neighbors(self, song_list, num_levels=1, fanout=20):
         print "**************************************************"
         print "QUERY: ", song_list 
         print "**************************************************\n"
 
-        song_id_list = pardora_db.get_song_ids_from_title_artist_pairs(song_list)
+        song_id_list = pardora_db.get_song_ids_from_title_artist_pairs(song_list, self.cursor)
 
         final_dict = {}
         final_dict[0] = {}
@@ -296,21 +317,22 @@ class Pardora:
         # Make sure the query returned some results
         if song_id_list is not None:
             if num_levels == 1:
-                nn = self.get_nn_one_query(song_id_list, fanout)
+                nn, nn_cf_scores  = self.get_nn_one_query(song_id_list, fanout)
                 final_dict[0]['children'] = nn
 
             else:
                 queue = {}
                 queue[0] = []
-                nn = self.get_nn_one_query(song_id_list, fanout)
+                nn, nn_cf_scores = self.get_nn_one_query(song_id_list, fanout)
                 final_dict[0]['children'] = nn
+
+                id_list = nn.keys()
 
                 for n in nn.keys():
                     queue[0].append(nn[n]) 
 
-                id_list = nn.keys()
                 for level in range(num_levels-1):
-                    m_nn, id_list = self.get_nn_multi_query(id_list, fanout)
+                    m_nn, nn_cf_scores, id_list = self.get_nn_multi_query(id_list, nn_cf_scores, fanout)
 
                     for elem in queue[level]:
                         elem['children'] = m_nn[elem['song_id']] 
@@ -326,7 +348,6 @@ class Pardora:
         return final_dict
     
     def print_tree(self, final_dict, levels):
-
         print ":::::::::::::::::::::::::::::::::::::::::::::::::::"
         print "                FINAL TREE                         "
         print "ROOT: ", final_dict[0]['class'] 
@@ -380,29 +401,30 @@ class Pardora:
         print ":::::::::::::::::::::::::::::::::::::::::::::::::::"
 
     def __init__(self):
+        self.conn = mdb.connect(conn_str[0], conn_str[1], conn_str[2], conn_str[3])
+        self.cursor = self.conn.cursor()
         self.timbre_ubm_params, self.rhythm_ubm_params = pardora_ubm.get_UBM_parameters(M, from_pickle=True)
         print "------------- DONE INITIALIZING ----------"
+
+    def __del__(self):
+        self.cursor.close()
+        self.conn.close()
 
 p = Pardora()
 
 t = time.time()
-#p.create_rhythm_table()
-#p.compute_and_add_rhythm_feats()
-
-#p.create_sv_table()
-#p.compute_and_add_song_svs()
 
 song_list = []
-song_list.append(("radiohead", "karma police"))
-song_list.append(("elton john", "angeline"))
+#song_list.append(("radiohead", "karma police"))
+#song_list.append(("elton john", "angeline"))
 song_list.append(("lady gaga", "alejandro"))
-song_list.append(("cat stevens", "peace train"))
-song_list.append(("elton john", "candle in the wind"))
-song_list.append(("elton john", "memory of love"))
-song_list.append(("cat stevens", "moonshadow"))
-song_list.append(("jack johnson", "bubble toes"))
-song_list.append(("bill withers", "make love to your mind"))
-song_list.append(("perl jam", "black"))
+#song_list.append(("cat stevens", "peace train"))
+#song_list.append(("elton john", "candle in the wind"))
+#song_list.append(("elton john", "memory of love"))
+#song_list.append(("cat stevens", "moonshadow"))
+#song_list.append(("jack johnson", "bubble toes"))
+#song_list.append(("bill withers", "make love to your mind"))
+#song_list.append(("perl jam", "black"))
 
 final_dict = p.get_near_neighbors(song_list, 1, 5)
 p.print_tree(final_dict, 1)

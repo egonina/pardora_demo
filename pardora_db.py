@@ -6,30 +6,23 @@ import binascii
 import array
 import sqlite3
 
-conn_str = '169.229.49.36', 'dbuser', 'p41msongs', 'milsongs'
 SV_SIZE = 768
 
 #=====================================
 #          DB MANIPULATION 
 #=====================================
 # ===== SUPERVECTORS =====
-def drop_sv_table():
-    conn = mdb.connect(conn_str[0], conn_str[1], conn_str[2], conn_str[3])
-    c = conn.cursor()
+def drop_sv_table(conn, db_cursor):
     q = 'DROP TABLE songs1m_sv'
-    c.execute(q)
+    db_cursor.execute(q)
     conn.commit()
-    c.close()
-    conn.close()
 
-def create_sv_table():
+def create_sv_table(conn, db_cursor):
     """
     Creates the file and an empty table.
     """
     # creates file
-    conn = mdb.connect(conn_str[0], conn_str[1], conn_str[2], conn_str[3])
     # add stuff
-    c = conn.cursor()
     q = 'CREATE TABLE IF NOT EXISTS '
     q += 'songs1m_sv (song_id CHAR(18), '
     q += 'timbre_sv MEDIUMBLOB, '
@@ -41,14 +34,14 @@ def create_sv_table():
     q += 'p_mean_r REAL, '
     q += 'p_sigma_r REAL, '
     q += 'PRIMARY KEY (song_id)) ENGINE=NDBCLUSTER DEFAULT CHARSET=utf8;'
-    c.execute(q)
+    db_cursor.execute(q)
     # commit and close
     conn.commit()
-    c.close()
-    conn.close()
 
-def add_sv_and_p_vals_to_db(conn, c, song_id, t_sv, r_sv, \
-                            p_mean_t, p_sigma_t, p_mean_r, p_sigma_r):
+def add_sv_and_p_vals_to_db(song_id, t_sv, r_sv, \
+                            p_mean_t, p_sigma_t, \
+                            p_mean_r, p_sigma_r, \
+                            db_cursor):
     # build query
     q = "INSERT INTO songs1m_sv VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s);"
 
@@ -61,39 +54,30 @@ def add_sv_and_p_vals_to_db(conn, c, song_id, t_sv, r_sv, \
     insert_values = (song_id, t_sv_bin, t_sv0, r_sv_bin, r_sv0, \
                      p_mean_t, p_sigma_t, p_mean_r, p_sigma_r)
     
-    c.execute(q, insert_values)
+    db_cursor.execute(q, insert_values)
 
 # ===== RHYTHM FEATURES =====
-def drop_rhythm_table():
-    conn = mdb.connect(conn_str[0], conn_str[1], conn_str[2], conn_str[3])
-    c = conn.cursor()
+def drop_rhythm_table(conn, db_cursor):
     q = 'DROP TABLE songs1m_rhythm'
-    c.execute(q)
+    db_cursor.execute(q)
     conn.commit()
-    c.close()
-    conn.close()
 
-def create_rhythm_table():
+def create_rhythm_table(conn, db_cursor):
     """
     Creates the file and an empty table.
     """
     # creates file
-    conn = mdb.connect(conn_str[0], conn_str[1], conn_str[2], conn_str[3])
-    # add stuff
-    c = conn.cursor()
     q = 'CREATE TABLE IF NOT EXISTS '
     q += 'songs1m_rhythm (song_id CHAR(18), '
     q += 'rhythm_feats MEDIUMBLOB, '
     q += 'rhythm_shape_0 INT, '
     q += 'rhythm_shape_1 INT, '
     q += 'PRIMARY KEY (song_id)) ENGINE=NDBCLUSTER DEFAULT CHARSET=utf8;'
-    c.execute(q)
+    db_cursor.execute(q)
     # commit and close
     conn.commit()
-    c.close()
-    conn.close()
 
-def add_rhythm_feats_to_db(conn, c, song_id, r_feats):
+def add_rhythm_feats_to_db(song_id, r_feats, db_cursor):
     # build query
     q = "INSERT INTO songs1m_rhythm VALUES (%s, %s, %s, %s);"
 
@@ -103,35 +87,29 @@ def add_rhythm_feats_to_db(conn, c, song_id, r_feats):
 
     insert_values = (song_id, r_f_bin, r_f0, r_f1)
     
-    c.execute(q, insert_values)
+    db_cursor.execute(q, insert_values)
 
 #=====================================
 #          DB QUERYING 
 #=====================================
-def get_song_mta_data(artist=None, title=None):
+def get_song_mta_data(db_cursor, artist=None, title=None):
     if title is None or artist is None:
         print "Need title and artist to get song MTA data"
         sys.exit()
     else:
-
-        conn = mdb.connect(conn_str[0], conn_str[1], conn_str[2], conn_str[3])
-        c = conn.cursor()
-
         sql_query = 'SELECT song_id \
                      FROM songs1m WHERE title = "' + title.lower() + \
                      '" AND artist_name = "' + artist.lower() + '"'
-        c.execute(sql_query)
-        song_id = c.fetchall()
+        db_cursor.execute(sql_query)
+        song_id = db_cursor.fetchall()
 
         song_id_q = str(song_id).strip('[]').replace("u", "").\
                      replace(",)", "").replace("(", "").replace(")", "")
 
         sql_query = "SELECT mode, tempo, artist_hottness, song_id \
                      FROM songs1m_mta WHERE song_id IN (" + song_id_q + ")"
-        c.execute(sql_query)
-        song_mta= c.fetchall()
-        c.close()
-        conn.close()
+        db_cursor.execute(sql_query)
+        song_mta= db_cursor.fetchall()
 
         for s in song_mta:
             mode = s[0]
@@ -140,45 +118,50 @@ def get_song_mta_data(artist=None, title=None):
 
         return mode, tempo, artist_hottness 
 
-def get_song_features_from_query(song_id_list):
-    conn = mdb.connect(conn_str[0], conn_str[1], conn_str[2], conn_str[3])
-    c = conn.cursor()
-
+def get_song_features_from_query(song_id_list, db_cursor):
     song_ids_str = str(song_id_list).strip('[]').replace("u", "").\
                  replace(",)", "").replace("(", "").replace(")", "")
 
     st = time.time()
     sql_query = "SELECT timbre_shape_0, timbre_shape_1, timbre_feats, artist_name, \
                 title FROM songs1m WHERE song_id IN (" + song_ids_str + ")"
-    c.execute(sql_query)
-    timbre_result = c.fetchall()
+    db_cursor.execute(sql_query)
+    timbre_result = db_cursor.fetchall()
 
     sql_query = "SELECT rhythm_shape_0, rhythm_shape_1, rhythm_feats \
                 FROM songs1m_rhythm WHERE song_id IN (" + song_ids_str + ")"
-    c.execute(sql_query)
-    rhythm_result = c.fetchall()
+    db_cursor.execute(sql_query)
+    rhythm_result = db_cursor.fetchall()
     print "TIME: get query song features from DB:\t", time.time() - st
-
-    c.close()
-             
-    conn.close()
 
     return timbre_result, rhythm_result
 
-def get_song_svs_multi_query(song_id_list):
-    conn = mdb.connect(conn_str[0], conn_str[1], conn_str[2], conn_str[3])
-    c = conn.cursor()
+def get_song_sv_data(song_id, db_cursor):
+    sql_query = "SELECT timbre_sv, rhythm_sv, \
+                 p_mean_t, p_mean_r, p_sigma_t, p_sigma_r, song_id \
+                 FROM songs1m_sv WHERE song_id = '" + song_id  + "'"
+    db_cursor.execute(sql_query)
+    song_data = db_cursor.fetchall()
 
+    s = song_data[0]
+    total_dict = {}
+    total_dict['q_t_sv'] = np.ndarray((SV_SIZE,),  buffer=s[0], dtype=np.float32)
+    total_dict['q_r_sv'] = np.ndarray((SV_SIZE,),  buffer=s[1], dtype=np.float32)
+    total_dict['p_mean_t'] = s[2]
+    total_dict['p_mean_r'] = s[3]
+    total_dict['p_sigma_t'] = s[4]
+    total_dict['p_sigma_r'] = s[5]
+
+    return total_dict
+
+def get_song_svs_multi_query(song_id_list, db_cursor):
     ids = str(song_id_list).replace("u", "").replace("[", "").replace("]", "")
 
     sql_query = "SELECT timbre_sv, rhythm_sv, \
                  p_mean_t, p_mean_r, p_sigma_t, p_sigma_r, song_id \
                  FROM songs1m_sv WHERE song_id IN (" + ids + ")"
-    c.execute(sql_query)
-    song_data = c.fetchall()
-
-    c.close()
-    conn.close()
+    db_cursor.execute(sql_query)
+    song_data = db_cursor.fetchall()
 
     total_dict = {}
     for s in song_data:
@@ -193,30 +176,25 @@ def get_song_svs_multi_query(song_id_list):
 
     return total_dict
 
-def get_cf_songs_data(collab_song_info):
-    conn = mdb.connect(conn_str[0], conn_str[1], conn_str[2], conn_str[3])
-    c = conn.cursor()
-
+def get_cf_songs_data(collab_song_info, db_cursor):
     ids = str(collab_song_info.keys()).replace("u", "").replace("[", "").replace("]", "")
 
     # get all song_ids
     sql_query = "SELECT title, artist_name, song_id \
                  FROM songs1m WHERE song_id IN (" + ids + ")"
-    c.execute(sql_query)
-    song_titles = c.fetchall()
+    db_cursor.execute(sql_query)
+    song_titles = db_cursor.fetchall()
 
     sql_query = "SELECT timbre_sv, rhythm_sv, \
                  p_mean_t, p_mean_r, p_sigma_t, p_sigma_r, song_id \
                  FROM songs1m_sv WHERE song_id IN (" + ids + ")"
-    c.execute(sql_query)
-    song_data = c.fetchall()
+    db_cursor.execute(sql_query)
+    song_data = db_cursor.fetchall()
 
     sql_query = "SELECT mode, tempo, artist_hottness, song_id \
                  FROM songs1m_mta WHERE song_id IN (" + ids + ")"
-    c.execute(sql_query)
-    song_mta = c.fetchall()
-    c.close()
-    conn.close()
+    db_cursor.execute(sql_query)
+    song_mta = db_cursor.fetchall()
 
     total_dict = {}
     for s in song_data:
@@ -245,10 +223,8 @@ def get_cf_songs_data(collab_song_info):
 
     return total_dict
 
-def get_song_ids_from_title_artist_pairs(song_list):
-    conn = mdb.connect(conn_str[0], conn_str[1], conn_str[2], conn_str[3])
-    c = conn.cursor()
-
+def get_song_ids_from_title_artist_pairs(song_list, db_cursor):
+    song_id_list = []
     # construct artist title query strings
     title_artist_string = '('
     for pair in song_list[:-1]:
@@ -260,10 +236,9 @@ def get_song_ids_from_title_artist_pairs(song_list):
     sql_query = 'SELECT song_id \
                  FROM songs1m WHERE ' + title_artist_string 
 
-    c.execute(sql_query)
-    song_ids = c.fetchall()
+    db_cursor.execute(sql_query)
+    song_ids = db_cursor.fetchall()
 
-    song_id_list = []
     for s in song_ids:
         song_id_list.append(s[0])
 
@@ -271,3 +246,22 @@ def get_song_ids_from_title_artist_pairs(song_list):
         return song_id_list
     else:
         return None
+
+def get_timbre_features_for_song_ids(song_id_list, db_cursor):
+    song_ids = str(song_id_list).strip('[]').replace("u", "").replace(",)", "").replace("(", "")
+    sql_query = "SELECT timbre_feats, segments_start, timbre_shape_0, \
+         timbre_shape_1, sstart_shape_0, song_id FROM songs1m WHERE song_id IN (" \
+         + song_ids + ")"
+    db_cursor.execute(sql_query)
+    songs = db_cursor.fetchall()
+
+def get_rhythm_features_for_song_ids(song_id_list, db_cursor):
+     song_ids = str(song_id_list).strip('[]').replace("u", "").replace(",)", "").replace("(", "")
+     
+     st = time.time()
+     sql_query = "SELECT rhythm_feats, rhythm_shape_0, rhythm_shape_1, song_id \
+                  FROM songs1m_rhythm \
+                  WHERE song_id IN ("+song_ids+")"
+     db_cursor.execute(sql_query)
+     songs = db_cursor.fetchall()
+     return songs

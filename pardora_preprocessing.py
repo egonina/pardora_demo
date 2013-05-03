@@ -27,7 +27,7 @@ def chunks(l, n):
 #         RHYTHM COMPUTATION 
 #=====================================
 
-def compute_and_add_rhythm_feats():
+def compute_and_add_rhythm_feats(db_cursor):
     print "............... Computing and Adding Rhythm Features To DB ...................."
     p = open(song_id_pkl, "rb")    
     song_ids = pickle.load(p)
@@ -36,13 +36,10 @@ def compute_and_add_rhythm_feats():
     song_id_chunks = chunks(song_ids, CHUNK_SIZE)
     chunk_count = 0
 
-    conn = mdb.connect(conn_str[0], conn_str[1], conn_str[2], conn_str[3])
-    c = conn.cursor()
-
     # get all song_ids
     sql_query = "SELECT song_id FROM songs1m_rhythm;"
-    c.execute(sql_query)
-    all_songs = c.fetchall()
+    db_cursor.execute(sql_query)
+    all_songs = db_cursor.fetchall()
     all_songs_list = []
     for s in all_songs:
         s = s[0]
@@ -54,12 +51,7 @@ def compute_and_add_rhythm_feats():
             print "==== CHUNK: ", chunk_count, " ===="
             st = time.time()
 
-            song_ids = str(chunk).strip('[]').replace("u", "").replace(",)", "").replace("(", "")
-            sql_query = "SELECT timbre_feats, segments_start, timbre_shape_0, \
-                 timbre_shape_1, sstart_shape_0, song_id FROM songs1m WHERE song_id IN (" \
-                 + song_ids + ")"
-            c.execute(sql_query)
-            songs = c.fetchall()
+            songs = pardora_db.get_timbre_features_for_song_ids(chunk, db_cursor)
             
             for s in songs:
                 t_feats =  np.ndarray((s[2],s[3]), buffer=s[0])
@@ -71,7 +63,7 @@ def compute_and_add_rhythm_feats():
 
                 if onset_coefs is not None:
                     if song_id not in all_songs_list:
-                        pardora_db.add_rhythm_feats_to_db(conn, c, song_id, onset_coefs)
+                        pardora_db.add_rhythm_feats_to_db(conn, c, song_id, onset_coefs, db_cursor)
                         all_songs_list.append(song_id)
 
             print "INFO: chunk rhythm compute time:", time.time() - st
@@ -83,15 +75,13 @@ def compute_and_add_rhythm_feats():
     print "INFO: TOTAL TIME FOR RHYTHM COMP TIME: ", time.time() - total_time 
     print "================================"
 
-    c.close()
-    conn.close()
     return
 
 #=====================================
 #       SUPERVECTOR COMPUTATION 
 #=====================================
 
-def compute_and_add_song_svs(timbre_ubm_params, rhythm_ubm_params):
+def compute_and_add_song_svs(timbre_ubm_params, rhythm_ubm_params, db_cursor):
     print "............... Computing and Adding Supervectors To DB ...................."
     p = open(song_id_pkl, "rb")    
     song_ids = pickle.load(p)
@@ -99,9 +89,6 @@ def compute_and_add_song_svs(timbre_ubm_params, rhythm_ubm_params):
 
     song_id_chunks = chunks(song_ids, CHUNK_SIZE)
     chunk_count = 0
-
-    conn = mdb.connect(conn_str[0], conn_str[1], conn_str[2], conn_str[3])
-    c = conn.cursor()
 
     t_mean_to_use = np.zeros(1)
     t_sv = np.zeros(1)
@@ -120,14 +107,7 @@ def compute_and_add_song_svs(timbre_ubm_params, rhythm_ubm_params):
 
           chunk_time = time.time()
 
-          song_ids = str(chunk).strip('[]').replace("u", "").replace(",)", "").replace("(", "")
-          
-          st = time.time()
-          sql_query = "SELECT rhythm_feats, rhythm_shape_0, rhythm_shape_1, song_id \
-                       FROM songs1m_rhythm \
-                       WHERE song_id IN ("+song_ids+")"
-          c.execute(sql_query)
-          songs = c.fetchall()
+          songs = pardora_db.get_rhythm_features_for_song_ids(chunk, db_cursor)
           
           for s in songs:
               if s[1] is not None and s[2] is not None:
@@ -140,10 +120,7 @@ def compute_and_add_song_svs(timbre_ubm_params, rhythm_ubm_params):
           print "INFO: Rhythm SV comp time: ", time.time() - st
 
           st = time.time()
-          sql_query = "SELECT timbre_feats, timbre_shape_0, timbre_shape_1, song_id FROM songs1m \
-                      WHERE song_id IN ("+song_ids+")"
-          c.execute(sql_query)
-          songs = c.fetchall()
+          songs = pardora_db.get_timbre_features_for_song_ids(chunk, db_cursor)
 
           for s in songs:
               if s[3] in song_id_list:
@@ -189,8 +166,9 @@ def compute_and_add_song_svs(timbre_ubm_params, rhythm_ubm_params):
               r = np.array(r_sv[idx])
               if s_id not in all_songs_list:
                   pardora_db.add_sv_and_p_vals_to_db(conn, c, s_id, t, r, \
-                                                     p_means_t[idx], p_sigmas_t[idx], 
-                                                     p_means_r[idx], p_sigmas_r[idx])
+                                                     p_means_t[idx], p_sigmas_t[idx],\
+                                                     p_means_r[idx], p_sigmas_r[idx],\
+                                                     db_cursor)
                   all_songs_list.append(s_id)
               idx += 1
 
@@ -212,8 +190,5 @@ def compute_and_add_song_svs(timbre_ubm_params, rhythm_ubm_params):
     p = open(norm_param_pkl, "wb")
     pickle.dump(d, p, True)
     p.close()
-
-    c.close()
-    conn.close()
 
     return
