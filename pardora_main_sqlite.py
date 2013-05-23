@@ -10,9 +10,10 @@ import msdtools
 import unicodedata
 import collab
 import json
+import sqlite3 as lite
 
 # Pardora-specific imports
-import pardora_db
+import pardora_db_sqlite
 import pardora_ubm
 import pardora_preprocessing
 
@@ -22,13 +23,13 @@ l2_output_pkl = "/disk1/home_user/egonina/pardora_demo/sample_output/lady_gaga/p
 l3_output_pkl = "/disk1/home_user/egonina/pardora_demo/sample_output/lady_gaga/pardora_l3.pkl"
 l4_output_pkl = "/disk1/home_user/egonina/pardora_demo/sample_output/lady_gaga/pardora_l4.pkl"
 
-mta_json = "/disk1/home_user/egonina/msd_database/mta_data.json"
+song_list_10k = "/disk1/home_user/egonina/msd_database/10k_songs.json"
 l1_output_json = "/disk1/home_user/egonina/pardora_demo/sample_output/lady_gaga/pardora_l1.json"
 l2_output_json = "/disk1/home_user/egonina/pardora_demo/sample_output/lady_gaga/pardora_l2.json"
 l3_output_json = "/disk1/home_user/egonina/pardora_demo/sample_output/lady_gaga/pardora_l3.json"
 l4_output_json = "/disk1/home_user/egonina/pardora_demo/sample_output/lady_gaga/pardora_l4.json"
 
-conn_str = '169.229.49.36', 'dbuser', 'p41msongs', 'milsongs'
+database = "/disk1/home_user/egonina/msd_database/msd_subset.db"
 
 CF_NEIGHBORS = 100 
 M = 64
@@ -38,11 +39,11 @@ class Pardora:
     #        WRAPPERS TO PREPROCESSING FUNCTIONS  
     #=================================================
     def create_rhythm_table(self):
-        pardora_db.create_rhythm_table(self.conn, self.cursor)
+        pardora_db_sqlite.create_rhythm_table(self.conn, self.cursor)
         return
 
     def drop_rhythm_table(self):
-        pardora_db.drop_rhythm_table(self.conn, self.cursor)
+        pardora_db_sqlite.drop_rhythm_table(self.conn, self.cursor)
         return
 
     def compute_and_add_rhythm_feats(self):
@@ -50,20 +51,20 @@ class Pardora:
         return
 
     def create_sv_table(self):
-        pardora_db.create_sv_table(self.conn, self.cursor)
+        pardora_db_sqlite.create_sv_table(self.conn, self.cursor)
         return
 
     def drop_sv_table(self):
-        pardora_db.drop_sv_table(self.conn, self.cursor)
+        pardora_db_sqlite.drop_sv_table(self.conn, self.cursor)
         return
 
     def compute_and_add_song_svs(self, timbre_ubm_params, rhythm_ubm_params):
         pardora_preprocessing.compute_and_add_song_svs(timbre_ubm_params, rhythm_ubm_params, self.cursor)
         return
 
-    def get_mta_data(self):
-        mta_list = pardora_db.get_all_song_mta_data(self.cursor)
-        return mta_list
+    def get_all_song_data(self):
+        song_list = pardora_db_sqlite.get_all_song_data(self.cursor)
+        return song_list
     
     #=====================================
     #         QUERY COMPUTATIONS 
@@ -75,7 +76,7 @@ class Pardora:
 
         print "NUMBER OF SONGS IN QUERY: ", len(song_id_list)
         if len(song_id_list) > 1:
-            timbre_result, rhythm_result = pardora_db.get_song_features_from_query(song_id_list, self.cursor)
+            timbre_result, rhythm_result = pardora_db_sqlite.get_song_features_from_query(song_id_list, self.cursor)
 
             t_feature_list = []
             r_feature_list = []
@@ -114,7 +115,7 @@ class Pardora:
             query_dict['p_sigma_t'] = p_sigma_t
             query_dict['p_sigma_r'] = p_sigma_r
         else:
-            query_dict = pardora_db.get_song_sv_data(song_id_list[0], self.cursor)
+            query_dict = pardora_db_sqlite.get_song_sv_data(song_id_list[0], self.cursor)
 
         return query_dict 
 
@@ -123,7 +124,7 @@ class Pardora:
         song_sv_dict = pickle.load(p)
         p.close()
 
-        query_dicts = pardora_db.get_song_svs_multi_query(song_id_list, self.cursor)
+        query_dicts = pardora_db_sqlite.get_song_svs_multi_query(song_id_list, self.cursor)
 
         return query_dicts
 
@@ -240,7 +241,7 @@ class Pardora:
 
         if len(collab_song_info.keys()) > 0:
             t1 = time.time()
-            close_songs_dict = pardora_db.get_cf_songs_data(collab_song_info, self.cursor)
+            close_songs_dict = pardora_db_sqlite.get_cf_songs_data(collab_song_info, self.cursor)
             cf_data_query_time += time.time() - t1 
 
             t2 = time.time()
@@ -285,7 +286,7 @@ class Pardora:
 
             if len(collab_song_infos[input_song_id].keys()) > 0:
                 t1 = time.time()
-                close_songs_dict = pardora_db.get_cf_songs_data(collab_song_infos[input_song_id], self.cursor)
+                close_songs_dict = pardora_db_sqlite.get_cf_songs_data(collab_song_infos[input_song_id], self.cursor)
                 cf_data_query_time += time.time() - t1 
 
                 t2 = time.time()
@@ -312,7 +313,8 @@ class Pardora:
         print "QUERY: ", song_list 
         print "**************************************************\n"
 
-        song_id_list = pardora_db.get_song_ids_from_title_artist_pairs(song_list, self.cursor)
+        song_id_list = pardora_db_sqlite.get_song_ids_from_title_artist_pairs(song_list, self.cursor)
+        print song_id_list
 
         final_dict = {}
         final_dict[0] = {}
@@ -405,13 +407,12 @@ class Pardora:
         print ":::::::::::::::::::::::::::::::::::::::::::::::::::"
 
     def __init__(self):
-        self.conn = mdb.connect(conn_str[0], conn_str[1], conn_str[2], conn_str[3])
-        self.cursor = self.conn.cursor()
+        self.conn = lite.connect(database)
+        self.cursor = self.conn
         self.timbre_ubm_params, self.rhythm_ubm_params = pardora_ubm.get_UBM_parameters(M, from_pickle=True)
         print "------------- DONE INITIALIZING ----------"
 
     def __del__(self):
-        self.cursor.close()
         self.conn.close()
 
 p = Pardora()
@@ -421,7 +422,7 @@ t = time.time()
 song_list = []
 #song_list.append(("radiohead", "karma police"))
 #song_list.append(("elton john", "angeline"))
-song_list.append(("lady gaga", "alejandro"))
+#song_list.append(("lady gaga", "alejandro"))
 #song_list.append(("cat stevens", "peace train"))
 #song_list.append(("elton john", "candle in the wind"))
 #song_list.append(("elton john", "memory of love"))
@@ -429,9 +430,10 @@ song_list.append(("lady gaga", "alejandro"))
 #song_list.append(("jack johnson", "bubble toes"))
 #song_list.append(("bill withers", "make love to your mind"))
 #song_list.append(("perl jam", "black"))
+song_list.append(("Foo Fighters", "Overdrive"))
 
-final_dict = p.get_near_neighbors(song_list, 3, 5)
-p.print_tree(final_dict, 3)
+final_dict = p.get_near_neighbors(song_list, 1, 5)
+p.print_tree(final_dict, 1)
 
 #with open(l3_output_pkl, 'wb') as fp:
 #    pickle.dump(final_dict, fp)
@@ -439,6 +441,7 @@ p.print_tree(final_dict, 3)
 #with open(l3_output_json, 'w') as fp:
 #    json.dump(final_dict, fp)
 #    fp.close()
+
 
 
 print "----------------------------------------------------------------------------"

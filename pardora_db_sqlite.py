@@ -92,49 +92,23 @@ def add_rhythm_feats_to_db(song_id, r_feats, db_cursor):
 #=====================================
 #          DB QUERYING 
 #=====================================
-def get_all_song_mta_data(db_cursor):
+def get_all_song_data(db_cursor):
 
-    sql_query = "SELECT song_id, mode, tempo, artist_hottness, song_id FROM songs1m_mta" 
-    db_cursor.execute(sql_query)
-    song_mta= db_cursor.fetchall()
+    sql_query = "SELECT song_id, artist_name, title FROM songs" 
+    res = db_cursor.execute(sql_query)
+    songs= res.fetchall()
 
     total_list = []
-    for s in song_mta:
+    for s in songs:
         song_id = s[0]
-        mode = s[1]
-        tempo = s[2]
-        artist_hottness = s[3]
+        artist = s[1]
+        title = s[2]
 
-        total_list.append((song_id, mode, tempo, artist_hottness))
+        total_list.append((song_id, artist, title))
 
     return total_list
 
 
-def get_song_mta_data(db_cursor, artist=None, title=None):
-    if title is None or artist is None:
-        print "Need title and artist to get song MTA data"
-        sys.exit()
-    else:
-        sql_query = 'SELECT song_id \
-                     FROM songs1m WHERE title = "' + title.lower() + \
-                     '" AND artist_name = "' + artist.lower() + '"'
-        db_cursor.execute(sql_query)
-        song_id = db_cursor.fetchall()
-
-        song_id_q = str(song_id).strip('[]').replace("u", "").\
-                     replace(",)", "").replace("(", "").replace(")", "")
-
-        sql_query = "SELECT mode, tempo, artist_hottness, song_id \
-                     FROM songs1m_mta WHERE song_id IN (" + song_id_q + ")"
-        db_cursor.execute(sql_query)
-        song_mta= db_cursor.fetchall()
-
-        for s in song_mta:
-            mode = s[0]
-            tempo = s[1]
-            artist_hottness = s[2]
-
-        return mode, tempo, artist_hottness 
 
 def get_song_features_from_query(song_id_list, db_cursor):
     song_ids_str = str(song_id_list).strip('[]').replace("u", "").\
@@ -142,14 +116,14 @@ def get_song_features_from_query(song_id_list, db_cursor):
 
     st = time.time()
     sql_query = "SELECT timbre_shape_0, timbre_shape_1, timbre_feats, artist_name, \
-                title FROM songs1m WHERE song_id IN (" + song_ids_str + ")"
-    db_cursor.execute(sql_query)
-    timbre_result = db_cursor.fetchall()
+                title FROM songs WHERE song_id IN (" + song_ids_str + ")"
+    res = db_cursor.execute(sql_query)
+    timbre_result = res.fetchall()
 
     sql_query = "SELECT rhythm_shape_0, rhythm_shape_1, rhythm_feats \
-                FROM songs1m_rhythm WHERE song_id IN (" + song_ids_str + ")"
-    db_cursor.execute(sql_query)
-    rhythm_result = db_cursor.fetchall()
+                FROM songs WHERE song_id IN (" + song_ids_str + ")"
+    res = db_cursor.execute(sql_query)
+    rhythm_result = res.fetchall()
     print "TIME: get query song features from DB:\t", time.time() - st
 
     return timbre_result, rhythm_result
@@ -157,9 +131,9 @@ def get_song_features_from_query(song_id_list, db_cursor):
 def get_song_sv_data(song_id, db_cursor):
     sql_query = "SELECT timbre_sv, rhythm_sv, \
                  p_mean_t, p_mean_r, p_sigma_t, p_sigma_r, song_id \
-                 FROM songs1m_sv WHERE song_id = '" + song_id  + "'"
-    db_cursor.execute(sql_query)
-    song_data = db_cursor.fetchall()
+                 FROM songs WHERE song_id = '" + song_id  + "'"
+    res = db_cursor.execute(sql_query)
+    song_data = res.fetchall()
 
     s = song_data[0]
     total_dict = {}
@@ -177,9 +151,9 @@ def get_song_svs_multi_query(song_id_list, db_cursor):
 
     sql_query = "SELECT timbre_sv, rhythm_sv, \
                  p_mean_t, p_mean_r, p_sigma_t, p_sigma_r, song_id \
-                 FROM songs1m_sv WHERE song_id IN (" + ids + ")"
-    db_cursor.execute(sql_query)
-    song_data = db_cursor.fetchall()
+                 FROM songs WHERE song_id IN (" + ids + ")"
+    res = db_cursor.execute(sql_query)
+    song_data = res.fetchall()
 
     total_dict = {}
     for s in song_data:
@@ -199,20 +173,20 @@ def get_cf_songs_data(collab_song_info, db_cursor):
 
     # get all song_ids
     sql_query = "SELECT title, artist_name, song_id \
-                 FROM songs1m WHERE song_id IN (" + ids + ")"
-    db_cursor.execute(sql_query)
-    song_titles = db_cursor.fetchall()
+                 FROM songs WHERE song_id IN (" + ids + ")"
+    res = db_cursor.execute(sql_query)
+    song_titles = res.fetchall()
 
     sql_query = "SELECT timbre_sv, rhythm_sv, \
                  p_mean_t, p_mean_r, p_sigma_t, p_sigma_r, song_id \
-                 FROM songs1m_sv WHERE song_id IN (" + ids + ")"
-    db_cursor.execute(sql_query)
-    song_data = db_cursor.fetchall()
+                 FROM songs WHERE song_id IN (" + ids + ")"
+    res = db_cursor.execute(sql_query)
+    song_data = res.fetchall()
 
-    sql_query = "SELECT mode, tempo, artist_hottness, song_id \
-                 FROM songs1m_mta WHERE song_id IN (" + ids + ")"
-    db_cursor.execute(sql_query)
-    song_mta = db_cursor.fetchall()
+    #sql_query = "SELECT mode, tempo, artist_hottness, song_id \
+    #             FROM songs WHERE song_id IN (" + ids + ")"
+    #res = db_cursor.execute(sql_query)
+    #song_mta = res.fetchall()
 
     total_dict = {}
     for s in song_data:
@@ -231,13 +205,16 @@ def get_cf_songs_data(collab_song_info, db_cursor):
         if song_id in total_dict.keys():
             total_dict[song_id]['title'] = s[0]
             total_dict[song_id]['artist_name'] = s[1]
+            total_dict[song_id]['mode'] = -1 
+            total_dict[song_id]['tempo'] = -1 
+            total_dict[song_id]['artist_hottness'] = -1 
 
-    for s in song_mta:
-        song_id = s[3]
-        if song_id in total_dict.keys():
-            total_dict[song_id]['mode'] = s[0]
-            total_dict[song_id]['tempo'] = s[1]
-            total_dict[song_id]['artist_hottness'] = s[2]
+    #for s in song_mta:
+    #    song_id = s[3]
+    #    if song_id in total_dict.keys():
+    #        total_dict[song_id]['mode'] = -1 
+    #        total_dict[song_id]['tempo'] = -1 
+    #        total_dict[song_id]['artist_hottness'] = -1 
 
     return total_dict
 
@@ -252,10 +229,10 @@ def get_song_ids_from_title_artist_pairs(song_list, db_cursor):
     title_artist_string += ' title = "' + str(pair[1]) + '" AND artist_name = "' + str(pair[0]) + '")'
 
     sql_query = 'SELECT song_id \
-                 FROM songs1m WHERE ' + title_artist_string 
+                 FROM songs WHERE ' + title_artist_string 
 
-    db_cursor.execute(sql_query)
-    song_ids = db_cursor.fetchall()
+    res = db_cursor.execute(sql_query)
+    song_ids = res.fetchall()
 
     for s in song_ids:
         song_id_list.append(s[0])
@@ -268,18 +245,18 @@ def get_song_ids_from_title_artist_pairs(song_list, db_cursor):
 def get_timbre_features_for_song_ids(song_id_list, db_cursor):
     song_ids = str(song_id_list).strip('[]').replace("u", "").replace(",)", "").replace("(", "")
     sql_query = "SELECT timbre_feats, segments_start, timbre_shape_0, \
-         timbre_shape_1, sstart_shape_0, song_id FROM songs1m WHERE song_id IN (" \
+         timbre_shape_1, sstart_shape_0, song_id FROM songs WHERE song_id IN (" \
          + song_ids + ")"
-    db_cursor.execute(sql_query)
-    songs = db_cursor.fetchall()
+    res = db_cursor.execute(sql_query)
+    songs = res.fetchall()
 
 def get_rhythm_features_for_song_ids(song_id_list, db_cursor):
      song_ids = str(song_id_list).strip('[]').replace("u", "").replace(",)", "").replace("(", "")
      
      st = time.time()
      sql_query = "SELECT rhythm_feats, rhythm_shape_0, rhythm_shape_1, song_id \
-                  FROM songs1m_rhythm \
+                  FROM songs \
                   WHERE song_id IN ("+song_ids+")"
-     db_cursor.execute(sql_query)
-     songs = db_cursor.fetchall()
+     res = db_cursor.execute(sql_query)
+     songs = res.fetchall()
      return songs
