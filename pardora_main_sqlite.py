@@ -308,6 +308,56 @@ class Pardora:
               ";\n \tCF data gather (", cf_data_query_time, "), Dist comp (", dist_comp_time, ")"
         return total_nn_dict, out_nn_cf_scores, total_id_list
 
+    def get_near_neighbors_from_song_ids(self, song_ids, num_levels=1, fanout=20):
+        print "**************************************************"
+        print "QUERY: ", song_ids 
+        print "**************************************************\n"
+
+        t = time.time()
+
+        song_id_list = song_ids
+
+        final_dict = {}
+        final_dict[0] = {}
+        final_dict[0]['class'] = 'Root'
+
+        # Make sure the query returned some results
+        if song_id_list is not None:
+            if num_levels == 1:
+                nn, nn_cf_scores  = self.get_nn_one_query(song_id_list, fanout)
+                final_dict[0]['children'] = nn
+
+            else:
+                queue = {}
+                queue[0] = []
+                nn, nn_cf_scores = self.get_nn_one_query(song_id_list, fanout)
+                final_dict[0]['children'] = nn
+
+                id_list = nn.keys()
+
+                for n in nn.keys():
+                    queue[0].append(nn[n]) 
+
+                for level in range(num_levels-1):
+                    m_nn, nn_cf_scores, id_list = self.get_nn_multi_query(id_list, nn_cf_scores, fanout)
+
+                    for elem in queue[level]:
+                        elem['children'] = m_nn[elem['song_id']] 
+
+                    queue[level+1] = []
+                    for m in m_nn.keys():
+                        for k in m_nn[m].keys():
+                            queue[level+1].append(m_nn[m][k]) 
+        else:
+            print "No songs matched the query: ", song_list
+            sys.exit()
+
+        print "----------------------------------------------------------------------------"
+        print "                      QUERY PROCESSING TIME: ", time.time() - t
+        print "----------------------------------------------------------------------------"
+
+        return final_dict
+
     def get_near_neighbors(self, song_list, num_levels=1, fanout=20):
         print "**************************************************"
         print "QUERY: ", song_list 
