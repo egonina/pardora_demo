@@ -28,6 +28,8 @@ l2_output_json = "/disk1/home_user/egonina/pardora_demo/sample_output/lady_gaga/
 l3_output_json = "/disk1/home_user/egonina/pardora_demo/sample_output/lady_gaga/pardora_l3.json"
 l4_output_json = "/disk1/home_user/egonina/pardora_demo/sample_output/lady_gaga/pardora_l4.json"
 
+collab_cache_file = "/disk1/home_user/egonina/msd_database/cf_data/collab_cache.pkl"
+
 conn_str = '169.229.49.36', 'dbuser', 'p41msongs', 'milsongs'
 
 CF_NEIGHBORS = 100 
@@ -142,14 +144,20 @@ class Pardora:
         return collab_song_data 
 
     def get_collab_info_multi_query(self, song_id_list):
-        output_song_ids, output_similarity = \
-                collab.filter_multiple_queries(song_id_list, num_neighbors = CF_NEIGHBORS)
-        
+
+        # === NEW CODE, used cache to get the neighbors ===
+
+        list_of_song_nums = [collab.lookup_table['song']['num'][id] for id in song_id_list]
+
+        output_song_nums = [self.collab_cache['sorted_song_nums'][num][:CF_NEIGHBORS] for num in list_of_song_nums]
+        output_similarity = [self.collab_cache['sorted_distances'][num][:CF_NEIGHBORS] for num in list_of_song_nums]
+
         # collab_song_data[input_song_id] -> dictionary neighbor_song_id -> cf_score
         collab_song_data = {}
         for idx in range(len(song_id_list)):
             song_id = song_id_list[idx]
-            cf_nn = output_song_ids[idx] #should be a list..
+            cf_nn_nums = output_song_nums[idx] #should be a list..
+            cf_nn = [collab.lookup_table['song']['id'][num] for num in cf_nn_nums]
             cf_scores = output_similarity[idx] #should be a list..
             collab_song_data[song_id] = {}
             for nn_idx in range(len(cf_nn)):
@@ -157,6 +165,24 @@ class Pardora:
                     collab_song_data[song_id][cf_nn[nn_idx]] = cf_scores[nn_idx]
 
         return collab_song_data 
+
+        # === OLD CODE, computes the neighbors ===
+
+        #output_song_ids, output_similarity = \
+        #        collab.filter_multiple_queries(song_id_list, num_neighbors = CF_NEIGHBORS)
+        #
+        ## collab_song_data[input_song_id] -> dictionary neighbor_song_id -> cf_score
+        #collab_song_data = {}
+        #for idx in range(len(song_id_list)):
+        #    song_id = song_id_list[idx]
+        #    cf_nn = output_song_ids[idx] #should be a list..
+        #    cf_scores = output_similarity[idx] #should be a list..
+        #    collab_song_data[song_id] = {}
+        #    for nn_idx in range(len(cf_nn)):
+        #        if song_id != cf_nn[nn_idx]:
+        #            collab_song_data[song_id][cf_nn[nn_idx]] = cf_scores[nn_idx]
+
+        #return collab_song_data 
 
 
     def get_nn_dict(self, qd, NN, fanout, parent_cf_score=0.0):
@@ -464,6 +490,9 @@ class Pardora:
         self.conn = mdb.connect(conn_str[0], conn_str[1], conn_str[2], conn_str[3])
         self.cursor = self.conn.cursor()
         self.timbre_ubm_params, self.rhythm_ubm_params = pardora_ubm.get_UBM_parameters(M, from_pickle=True)
+        cc = open(collab_cache_file, 'rb')
+        self.collab_cache = pickle.load(cc)
+        cc.close()
         print "------------- DONE INITIALIZING ----------"
 
     def __del__(self):

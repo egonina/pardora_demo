@@ -19,7 +19,7 @@ class SongRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         fanout = int(search_string[2])
         result = p.get_near_neighbors_from_song_ids(song_ids, levels, fanout)
 
-        return result 
+        return result
         
 
     def do_GET(s):
@@ -30,10 +30,12 @@ class SongRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         # use q to come up with a list of songs to queue
         if q is not None:
             songs_to_queue = s.recommend_songs(q)
+            callback = q[3] # callback is fourth parameter in tuple returned by get_song_query
             s.send_response(200)
             s.send_header("Content-type", "text/javascript")
             s.end_headers()
-            s.wfile.write(json.dumps(songs_to_queue))
+            #s.wfile.write(json.dumps(songs_to_queue))
+            s.wfile.write(callback + "(" + json.dumps(songs_to_queue) + ")")
 
 
     def get_song_query(self):
@@ -57,7 +59,10 @@ class SongRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             else:
                 fanout = 5 # default 5 neighbors 
 
-            return (song_list, levels, fanout)
+            if 'callback' in query:
+                callback = query['callback'][0]
+
+            return (song_list, levels, fanout, callback)
         else:
             return None
 
