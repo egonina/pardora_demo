@@ -226,7 +226,7 @@ class Pardora:
         print "              GET NN COMPOUND QUERY                      "
         print "*********************************************************"
         st = time.time()
-        query_dict = p.get_query_data(song_id_list)
+        query_dict = self.get_query_data(song_id_list)
         print "INFO: Step 1, Get query data and supervectors:", time.time() - st
 
         st = time.time()
@@ -266,7 +266,7 @@ class Pardora:
         print "              GET NN MULTI QUERY                      "
         print "*********************************************************"
         st = time.time()
-        query_dicts = p.get_query_data_multi_query(song_id_list)
+        query_dicts = self.get_query_data_multi_query(song_id_list)
         print "INFO: Step 1, Get query data and supervectors:", time.time() - st
 
         st = time.time()
